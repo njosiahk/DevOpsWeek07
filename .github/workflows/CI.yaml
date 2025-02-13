@@ -1,0 +1,84 @@
+name: CI Process
+run-name: ${{ github.actor }} is learning GitHub Actions
+on: [push]
+jobs:
+  behave-testing:
+    # Setup a simple OS of choice, i.e., Linux
+    # Create VM with Ubuntu OS
+    runs-on: ubuntu-latest
+    permissions:
+      issues: write  # Grant permissions to create issues
+      
+    steps:
+      # Step 1: Checkout code from repository
+      - name: Checkout
+        uses: actions/checkout@v4.2.2
+      - name: Create an issue
+        uses: dacbd/create-issue-action@main
+        with:
+          token: ${{ github.token }}
+          title: Simple test issue
+          body: my new issue
+
+      # Step 2: List files in the repository
+      - name: List repo
+        run: |
+          ls
+
+      # Step 3: Set up Python environment
+      - name: Set up Python
+        uses: actions/setup-python@v5.3.0
+        with:
+          python-version: '3.13'
+
+      # Step 4: Install Behave using pip
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install behave==1.2.6  # Install Behave with a specific version (adjust version if needed)
+
+      # Step 5: Run Behave tests
+      - name: Run Behave tests
+        uses: cryptic-wizard/run-behave-tests@v0.4.0
+        with:
+          upload-artifact: true  # Default is true, adjust if needed
+          
+      # Step 6a: Send Telegram Message on failure 
+      - name: Send Telegram Message on Test Failure(s)
+        if: failure()
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: |
+          curl -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
+          -d chat_id="${TELEGRAM_CHAT_ID}" \
+          -d text="Review failed run, fix the issue(s), and re-run until successful."
+
+      # Step 6b: Send Telegram Message on success
+      - name: Send Telegram Message on Test Success
+        if: success()
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: |
+          curl -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
+          -d chat_id="${TELEGRAM_CHAT_ID}" \
+          -d text="Congratulations! All tests have passed successfully."
+
+      # Step 7: CD (Prepare files for delivery/deployment)-individual name
+      - name: Prepare files
+        run: |
+          mkdir -p release
+          cp -r ./calculator.py ./release/calculator-ht.py
+          echo "Deployment files prepared."
+          ls -l ./release/
+
+      # Step 8: Upload files to AWS S3
+      - name: Upload to AWS S3
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          AWS_REGION: "us-east-1"
+        run: |
+          aws s3 cp ./release s3://devops-calculator-app/release-files --recursiv
+          
